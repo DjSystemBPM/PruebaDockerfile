@@ -30,7 +30,7 @@ stages{
 
       stage('Make Container') {
          steps {
-           sh "docker build -t ejemplo:${env.BUILD_ID} ."
+           sh "sudo docker build -t ejemplo:${env.BUILD_ID} ."
           }
        }
     }
