@@ -34,7 +34,7 @@ stages{
           }
        }
 
-      stage('Build Container') {
+      stage('Push Container') {
         steps {
             withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
               sh "docker login -u ${USERNAME} -p ${PASSWORD}"
