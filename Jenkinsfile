@@ -30,8 +30,6 @@ stages{
 
       stage('Make Container') {
          steps {
-           sh "su -"
-           sh "Dj.130189"
            sh "docker build -t ejemplo:${env.BUILD_ID} ."
           }
        }
