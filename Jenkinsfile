@@ -24,15 +24,14 @@ stages{
               success {
                   echo 'Now Archiving...'
                   archiveArtifacts artifacts: '**/target/*.jar'
+                  node {
+                      /* ... */
+                      stage 'Push image'
+                      docker.withRegistry("https://registry.hub.docker.com", "docker-registry") {
+                          image.push()
+                      }
+                  }
               }
-          }
-      }
-
-      node {
-          /* ... */
-          stage 'Push image'
-          docker.withRegistry("https://registry.hub.docker.com", "docker-registry") {
-              image.push()
           }
       }
     }
