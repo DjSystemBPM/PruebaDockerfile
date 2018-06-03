@@ -24,15 +24,15 @@ stages{
               success {
                   echo 'Now Archiving...'
                   archiveArtifacts artifacts: '**/target/*.jar'
-                  node {
-                      /* ... */
-                      stage 'Push image'
-                      docker.withRegistry("https://registry.hub.docker.com", "docker-registry") {
-                          image.push()
-                      }
-                  }
               }
           }
       }
+
+      stage('Make Container') {
+         steps {
+           sh "docker build -t NOMBRE_DE_LA_INTERFAZ:${env.BUILD_ID} ."
+           sh "docker tag snscaimito/ledger-service:${env.BUILD_ID} snscaimito/ledger-service:latest"
+         }
+       }
     }
 }
