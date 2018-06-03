@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--Copyright (c) 2017, Multiva SA de CV All rights reserved. -->
+<!--Redistribution and use in source and binary forms, with or without modification,
+	are not permitted. -->
+<!--THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+	IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+	THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+	ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+	LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+	DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+	SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+	CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+	OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
+	USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. -->
+<!--Developed 2017 by Legosoft www.legosoft.com.mx -->
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:camel="http://camel.apache.org/schema/spring"
+    xmlns:cxf="http://camel.apache.org/schema/cxf"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd        http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd  http://camel.apache.org/schema/cxf http://camel.apache.org/schema/cxf/camel-cxf.xsd">
+    <!-- Bean de configuracion del servlet de Spring. El cual se encarga de
+		registrarlo con el nombre de CamelServlet y de cargarlo al iniciar la aplicacion. -->
+    <bean
+        class="org.springframework.boot.context.embedded.ServletRegistrationBean" id="camel-servlet">
+        <property name="name" value="CamelServlet"/>
+        <property name="loadOnStartup" value="1"/>
+        <property name="servlet">
+            <bean
+                class="org.apache.camel.component.servlet.CamelHttpTransportServlet" id="camel-servlet"/>
+        </property>
+        <property name="urlMappings" value="/*"/>
+    </bean>
+    <!-- Bean de utilidades para guardar y recuperar el request, y el response
+		de algunas invocaciones. -->
+    <bean class="com.multiva.beans.RequestFactory" id="request-factory"/>
+    <!-- Bean encargado de armar el request hacia Tam -->
+    <bean class="com.multiva.ticket.ValidaTicketRequest" id="valida-ticket-processor"/>
+    <!-- Bean que prepara el request hacia T24 -->
+    <bean class="com.multiva.processor.DatosBasicosT24Request" id="request-datos-basicos-t24"/>
+    <!-- Bean que construye la respuesta final hacia el cliente -->
+    <bean class="com.multiva.processor.FinalResposeProcessor" id="response-rest-service"/>
+    <!-- Componente de camel que se encarga de hacer la conexion hacia el servicio
+		de validacion de ticket -->
+    <cxf:rsClient
+        address="{{multiva.properties.url.rest.valida.ticket.host}}{{multiva.properties.url.rest.valida.ticket.path}}"
+        id="restValidaTicket" loggingFeatureEnabled="true">
+        <cxf:providers>
+            <bean
+                class="com.fasterxml.jackson.jaxrs.json.JacksonJsonProvider" id="jackson-valida-ticket"/>
+        </cxf:providers>
+    </cxf:rsClient>
+    <!-- Componente de camel que se encarga de hacer la conexion hacia el servicio
+		de T24 de datos del cliente -->
+    <cxf:cxfEndpoint address="{{multiva.properties.url.soap.service}}"
+        id="consultaSoapDatosBasicos" loggingFeatureEnabled="true"
+        serviceClass="com.multiva.ws.client.T24WebServicesImpl" wsdlURL="{{multiva.properties.url.soap.wsdl}}"/>
+    <!-- Inicia el contexto de camel el cual se encarga de contener las rutas
+		necesarias para la interfaz -->
+    <camelContext id="camel-context-datos-basicos" xmlns="http://camel.apache.org/schema/spring">
+        <propertyPlaceholder id="placeholder-datos-basicos" location="classpath:application.properties"/>
+        <restConfiguration
+            apiContextPath="{{multiva.properties.swagger.context.path.api}}"
+            component="servlet"
+            contextPath="{{multiva.properties.swagger.context.path}}"
+            enableCORS="true" host="{{multiva.properties.swagger.api.host}}">
+            <camel:apiProperty key="api.title" value="{{multiva.properties.swagger.api.title}}"/>
+            <camel:apiProperty key="api.version" value="{{multiva.properties.swagger.api.version}}"/>
+            <camel:apiProperty key="api.description" value="{{multiva.properties.swagger.api.description}}"/>
+            <camel:apiProperty key="api.contact.name" value="{{multiva.properties.swagger.api.contact.name}}"/>
+            <camel:apiProperty key="api.contact" value="{{multiva.properties.swagger.api.contact}}"/>
+            <camel:apiProperty key="cors" value="true"/>
+        </restConfiguration>
+        <rest path="{{multiva.properties.url.rest.grupo}}">
+            <post consumes="application/json"
+            	outType="com.multiva.dto.response.esb.DatosBasicosRespose"
+            	produces="application/json"
+            	type="com.multiva.dto.request.esb.DatosBasicosRequest"
+            	uri="{{multiva.properties.url.rest.application}}"
+            	customId="true" enableCORS="true" apiDocs="true">
+                <to uri="direct:ruta-inicio"/>
+            </post>
+        </rest>
+        <!-- Ruta de Inicio -->
+        <!-- 1. Llega una peticion al ESB en formato Json -->
+        <!-- 2. El Esb lo transforma a objeto -->
+        <!-- 3. Se manda a un log la entrada al ESB -->
+        <!-- 4. Se guarda el Request de entrada en un properties para su uso posterior -->
+        <!-- 5. Si todo fue satisfactorio se envia a validar el ticket -->
+        <route id="ruta-inicio">
+            <from id="from-inicio" uri="direct:ruta-inicio"/>
+            <doTry id="do-try-inicio">
+                <unmarshal id="unmarshal-inicio">
+                    <json id="json-entrada" library="Jackson" unmarshalTypeName="com.multiva.dto.request.esb.DatosBasicosRequest"/>
+                </unmarshal>
+                <log id="log-inicio" loggingLevel="INFO" message="{{multiva.properties.logger.request}}"/>
+                <bean id="bean-inicio" method="saveBodyOnProps" ref="request-factory"/>
+                <to id="to-inicio" uri="direct:servicio-valida-ticket"/>
+                <doCatch id="do-catch-inicio">
+                    <exception>java.lang.Exception</exception>
+                    <transform id="transform-catch-inicio">
+                        <simple>${property.CamelExceptionCaught}</simple>
+                    </transform>
+                    <to id="to-inicio-catch" uri="direct:rest-error-response"/>
+                </doCatch>
+            </doTry>
+        </route>
+        <!-- Ruta de Validacion de Ticket -->
+        <!-- 1. Prepara el request al servicio de validacion de ticket -->
+        <!-- 2. Consume el servicio de validacion de ticket del tam -->
+        <!-- 3. El tam nos contesta y transforma esa respuesta en objeto -->
+        <!-- 4. Si la respuesta es igual a 200 la ruta continua si no la ruta arroja
+			un error de validacion de ticket -->
+        <!-- 5. Si todo es correcto nos dirige hacia la ruta de Datos Basicos Cliente -->
+        <route id="ruta-valida-ticket">
+            <from id="from-valida-ticket" uri="direct:servicio-valida-ticket"/>
+            <doTry id="do-try-valida-ticket">
+                <process id="process-valida-ticket-1" ref="valida-ticket-processor"/>
+                <inOut id="in-out-valida-ticket" uri="cxfrs://bean://restValidaTicket"/>
+                <unmarshal id="unmarshal-valida-ticket">
+                    <json id="json-response-valida-ticket"
+                        library="Jackson" unmarshalTypeName="com.multiva.ticket.TicketResponse"/>
+                </unmarshal>
+                <choice id="choice-valida-ticket">
+                    <when id="when-valida-ticket">
+                        <simple>${body.responseStatus} == 200</simple>
+                        <to id="to-valida-ticket-correcto" uri="direct:servicio-datos-basicos"/>
+                    </when>
+                    <otherwise id="otherwise-valida-ticket">
+                        <to id="to-valida-ticket-error" uri="direct:rest-error-response"/>
+                    </otherwise>
+                </choice>
+                <doCatch id="do-catch-valida-ticket">
+                    <exception>java.lang.Exception</exception>
+                    <transform id="transform-catch-valida-ticket">
+                        <simple>${property.CamelExceptionCaught}</simple>
+                    </transform>
+                    <to id="to-valida-ticket-catch" uri="direct:rest-error-response"/>
+                </doCatch>
+            </doTry>
+        </route>
+        <!-- Ruta de Datos Basicos del Cliente -->
+        <!-- 1. Recupera el request del Esb para procesar el request hacia T24 -->
+        <!-- 2. Invoca el servicio de T24 el cual regresa la respuesta en formato
+			soap envelope -->
+        <!-- 3. La respuesta la convertimos a objeto para procesar la salida en
+			formato json -->
+        <route id="ruta-datos-basicos">
+            <from id="from-datos-basicos" uri="direct:servicio-datos-basicos"/>
+            <doTry id="do-try-datos-basicos">
+                <bean id="bean-datos-basicos" method="restoreRequest" ref="request-factory"/>
+                <process id="processor-datos-basicos-1" ref="request-datos-basicos-t24"/>
+                <marshal id="marshal-datos-basicos-1">
+                    <soapjaxb contextPath="com.multiva.ws.client" id="soap-format-datos-basicos-request"/>
+                </marshal>
+                <to id="to-datos-basicos" uri="cxf:bean:consultaSoapDatosBasicos?dataFormat=MESSAGE"/>
+                <unmarshal id="unmarshal-datos-basicos">
+                    <soapjaxb contextPath="com.multiva.ws.client" id="soap-format-datos-basicos-response"/>
+                </unmarshal>
+                <choice id="choice-datos-basicos">
+                    <when id="when-datos-basicos">
+                        <simple>${body.status.messages[].size} == 0</simple>
+                        <to id="to-datos-basicos-2" uri="direct:ruta-final"/>
+                    </when>
+                    <otherwise id="otherwise-datos-basicos">
+                        <to id="to-datos-basicos-error" uri="direct:rest-error-response"/>
+                    </otherwise>
+                </choice>
+                <doCatch id="do-catch-datos-basicos">
+                    <exception>java.lang.Exception</exception>
+                    <transform id="transform-catch-datos-basicos">
+                        <simple>${property.CamelExceptionCaught}</simple>
+                    </transform>
+                    <to id="to-datos-basicos-catch" uri="direct:rest-error-response"/>
+                </doCatch>
+            </doTry>
+        </route>
+        <!-- Ruta Final -->
+        <!-- 1. Procesa la respuesta final al cliente que solicita el servicio -->
+        <!-- 2. Transforma el Objeto que se preparo a formato Json -->
+        <!-- 3. Genera el log del servicio al final de la ruta -->
+        <route id="ruta-final">
+            <from id="from-final" uri="direct:ruta-final"/>
+            <process id="processor-final" ref="response-rest-service"/>
+            <marshal id="marshal-final">
+                <json id="json-salida" library="Jackson" unmarshalTypeName="com.multiva.dto.response.esb.DatosBasicosRespose"/>
+            </marshal>
+            <log id="log-final" loggingLevel="INFO" message="{{multiva.properties.logger.response}}"/>
+        </route>
+        <!-- Ruta Error -->
+        <!-- 1. Procesa los mensajes de Error que se generan dentro de la ruta -->
+        <!-- 2. Transforma el Objeto que se preparo a formato Json -->
+        <!-- 3. Genera el log de error del servicio al final de la ruta -->
+        <route id="ruta-error">
+            <from id="from-error" uri="direct:rest-error-response"/>
+            <bean id="bean-error" method="errorResponse" ref="request-factory"/>
+            <marshal id="unmarshal-error">
+                <json id="json-error" library="Jackson" unmarshalTypeName="com.multiva.dto.response.esb.DatosBasicosRespose"/>
+            </marshal>
+            <log id="log-error" loggingLevel="ERROR" message="{{multiva.properties.logger.response}}"/>
+        </route>
+    </camelContext>
+</beans>
