@@ -30,9 +30,8 @@ stages{
 
       stage('Make Container') {
          steps {
-           sh "docker build -t NOMBRE_DE_LA_INTERFAZ:${env.BUILD_ID} ."
-           sh "docker tag snscaimito/ledger-service:${env.BUILD_ID} snscaimito/ledger-service:latest"
-         }
+           sh "docker build -t ejemplo:${env.BUILD_ID} ."
+          }
        }
     }
 }
