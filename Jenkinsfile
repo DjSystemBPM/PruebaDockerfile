@@ -38,8 +38,9 @@ stages{
         steps {
             withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
               sh "docker login -u ${USERNAME} -p ${PASSWORD}"
-              sh "docker push 130189/ejemplo:${env.BUILD_ID}"
-              sh "docker push 130189/ejemplo:latest"
+              sh "docker tag ejemplo:${env.BUILD_ID} https://registry.hub.docker.com/${USERNAME}/ejemplo:${env.BUILD_ID}"
+              sh "docker push https://registry.hub.docker.com/${USERNAME}/ejemplo:${env.BUILD_ID}"
+              sh "docker push https://registry.hub.docker.com/${USERNAME}/ejemplo:latest"
             }
          }
       }
