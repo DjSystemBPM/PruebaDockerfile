@@ -18,7 +18,7 @@ pipeline {
 stages{
       stage('Clone'){
           steps {
-              sh 'mvn clean package'
+              sh 'mvn clean package -DskipTests'
           }
           post {
               success {
@@ -27,6 +27,13 @@ stages{
               }
           }
       }
+
+      stage('Build image') {
+          /* This builds the actual image; synonymous to
+           * docker build on the command line */
+          docker.build("multiva/esb-01-datos-basicos")
+      }
+
 
     }
 }
